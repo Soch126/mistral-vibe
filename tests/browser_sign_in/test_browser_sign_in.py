@@ -242,20 +242,42 @@ async def test_authenticate_raises_on_unknown_poll_state() -> None:
     assert err.value.code is BrowserSignInErrorCode.UNKNOWN_STATE
 
 
+def _browser_open_raises(_: str) -> bool:
+    raise RuntimeError("No browser is available")
+
+
 @pytest.mark.asyncio
-async def test_authenticate_raises_when_browser_cannot_be_opened() -> None:
+@pytest.mark.parametrize(
+    "open_browser",
+    [lambda _: False, _browser_open_raises],
+    ids=["returns-false", "raises"],
+)
+async def test_authenticate_continues_when_browser_cannot_be_opened(
+    open_browser: Callable[[str], bool],
+) -> None:
     events: list[BrowserSignInEvent] = []
-    _, service = build_test_service(poll_results=[], open_browser=lambda _: False)
+    gateway, service = build_test_service(
+        poll_results=[
+            BrowserSignInPollResult(status="completed", exchange_token="exchange-1")
+        ],
+        open_browser=open_browser,
+    )
 
-    with pytest.raises(BrowserSignInError, match="open browser"):
-        await service.authenticate(event_callback=events.append)
+    api_key = await service.authenticate(event_callback=events.append)
 
+    assert api_key == "sk-browser-key"
+    assert gateway.polled_urls == [TEST_POLL_URL]
     assert events == [
         BrowserSignInAttemptStarted(
             sign_in_url=TEST_SIGN_IN_URL,
             expires_at=build_sign_in_process(TEST_NOW).expires_at,
         ),
         BrowserSignInStatusChanged(status=BrowserSignInStatus.OPENING_BROWSER),
+        BrowserSignInStatusChanged(
+            status=BrowserSignInStatus.WAITING_FOR_BROWSER_SIGN_IN
+        ),
+        BrowserSignInStatusChanged(status=BrowserSignInStatus.EXCHANGING),
+        BrowserSignInStatusChanged(status=BrowserSignInStatus.COMPLETED),
     ]
 
 
