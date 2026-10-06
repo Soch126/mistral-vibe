@@ -99,7 +99,11 @@ class BrowserSignInService:
         if event_callback is not None:
             event_callback(event)
         self._emit_status(event_callback, BrowserSignInStatus.OPENING_BROWSER)
-        self._open_browser_or_raise(attempt.sign_in_url)
+        try:
+            self._open_browser_or_raise(attempt.sign_in_url)
+        except BrowserSignInError as err:
+            if err.code is not BrowserSignInErrorCode.OPEN_BROWSER_FAILED:
+                raise
         return await self._complete_attempt(attempt, event_callback=event_callback)
 
     async def _complete_attempt(
